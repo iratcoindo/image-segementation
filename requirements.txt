@@ -4,3 +4,5 @@ numpy
 pandas
 Pillow
 opencv-python-headless
+matplotlib
+scikit-image
