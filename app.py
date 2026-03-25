@@ -62,7 +62,7 @@ with col1:
     st.title("iRATco Image Segmentation Analysis")
     st.markdown("<span style='font-size:16px;color:gray;'>version 1.1.0</span>", unsafe_allow_html=True)
 with col2:
-    st.image("logo_iratco.png", width=250)
+    st.image("logo_iratco.png", width=350)
 
 # =====================================================
 # FUNCTIONS
