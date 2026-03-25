@@ -15,7 +15,7 @@ import streamlit as st
 USERS = {
     "admin": "12345",
     "lab": "iratco",
-    "user1": "test"
+    "msbangkit@gmail.com": "test"
 }
 
 # =========================
