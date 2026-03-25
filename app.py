@@ -28,7 +28,7 @@ if "authenticated" not in st.session_state:
 # LOGIN
 # =========================
 if not st.session_state.authenticated:
-    col1, col2 = st.columns([8,2])
+    col1, col2 = st.columns([6,2])
     with col1:
         st.title("🔐 Login to ")
     with col2:
