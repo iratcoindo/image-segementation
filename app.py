@@ -1,280 +1,281 @@
 import streamlit as st
-import cv2
+from streamlit_image_coordinates import streamlit_image_coordinates
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import tempfile
+from PIL import Image
+import cv2
 
-st.title("iRATco TrackR")
+import streamlit as st
 
-st.markdown("---")
-
-st.markdown(
-"""
-© 2026 Mawar Subangkit  
-Mouse Tracking Analysis Software  
-
-If you use this software, please cite:
-
-Subangkit M. (2026).  
-**IRATCO TrackR: Open-field behavioral tracking software.**  
-Available at: https://github.com/username/repository
-"""
+# =====================================================
+# PAGE
+# =====================================================
+st.set_page_config(
+    page_title="Image Segmentation Analysis",
+    page_icon="logo.png",
+    layout="wide"
 )
 
-uploaded_video = st.file_uploader("Upload mouse video")
-
-
-# -------------------------------------------------
-# Mouse detection
-# -------------------------------------------------
-
-def detect_mouse(frame):
-
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    _,mask = cv2.threshold(gray,200,255,cv2.THRESH_BINARY)
-
-    coords = np.column_stack(np.where(mask>0))
-
-    if len(coords)==0:
-        return None,None
-
-    y,x = coords.mean(axis=0)
-
-    return int(x),int(y)
-
-
-# -------------------------------------------------
-# Run analysis
-# -------------------------------------------------
-
-if uploaded_video:
-
-    if st.button("Run analysis"):
-
-        tfile = tempfile.NamedTemporaryFile(delete=False)
-        tfile.write(uploaded_video.read())
-
-        cap = cv2.VideoCapture(tfile.name)
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        X=[]
-        Y=[]
-
-        progress = st.progress(0)
-
-        frame_window = st.empty()
-
-        col1,col2,col3 = st.columns(3)
-
-        traj_plot = col1.empty()
-        dist_plot = col2.empty()
-        vel_plot = col3.empty()
-
-        heat_plot = st.empty()
-
-        frame_id = 0
-
-        while True:
-
-            ret,frame = cap.read()
-
-            if not ret:
-                break
-
-            x,y = detect_mouse(frame)
-
-            X.append(x)
-            Y.append(y)
-
-            if x is not None:
-                cv2.circle(frame,(x,y),6,(0,0,255),-1)
-
-            frame_window.image(frame,channels="BGR")
-
-            track = pd.DataFrame({"X":X,"Y":Y})
-
-            # -------------------------------------------------
-            # Mirror vertical coordinate
-            # -------------------------------------------------
-
-            track["Y"] = height - track["Y"]
-
-            # -------------------------------------------------
-            # Smoothing trajectory
-            # -------------------------------------------------
-
-            track["Xs"] = track["X"].rolling(5,center=True).mean()
-            track["Ys"] = track["Y"].rolling(5,center=True).mean()
-
-            track["Xs"].fillna(track["X"],inplace=True)
-            track["Ys"].fillna(track["Y"],inplace=True)
-
-            if len(track)>2:
-
-                track["dx"] = track.Xs.diff()
-                track["dy"] = track.Ys.diff()
-
-                track["step_distance"] = np.sqrt(track.dx**2 + track.dy**2)
-
-                track["velocity"] = track["step_distance"]
-
-                track["cumulative_distance"] = track.step_distance.fillna(0).cumsum()
-
-                track["bearing"] = np.arctan2(track.dy, track.dx)
-
-                track["bearing_deg"] = np.degrees(track["bearing"])
-
-                track["turn_angle"] = track["bearing_deg"].diff()
-
-                track["turn_angle"] = (track["turn_angle"] + 180) % 360 - 180
-
-
-                # update plot tiap 10 frame agar cepat
-                if frame_id % 10 == 0:
-
-                    # ----------------------------------
-                    # Trajectory
-                    # ----------------------------------
-
-                    fig1,ax1 = plt.subplots()
-
-                    ax1.plot(track.Xs,track.Ys,color="red")
-
-                    ax1.set_aspect("equal")
-
-                    ax1.set_title("Trajectory")
-
-                    traj_plot.pyplot(fig1)
-
-                    plt.close(fig1)
-
-
-                    # ----------------------------------
-                    # Cumulative distance
-                    # ----------------------------------
-
-                    fig2,ax2 = plt.subplots()
-
-                    ax2.plot(track["cumulative_distance"],color="steelblue")
-
-                    ax2.set_title("Cumulative distance")
-
-                    dist_plot.pyplot(fig2)
-
-                    plt.close(fig2)
-
-
-                    # ----------------------------------
-                    # Velocity
-                    # ----------------------------------
-
-                    fig3,ax3 = plt.subplots()
-
-                    ax3.plot(track["velocity"],color="purple")
-
-                    ax3.set_title("Velocity")
-
-                    vel_plot.pyplot(fig3)
-
-                    plt.close(fig3)
-
-
-                    # ----------------------------------
-                    # Heatmap
-                    # ----------------------------------
-
-                    if len(track)>20:
-
-                        fig4,ax4 = plt.subplots()
-
-                        sns.kdeplot(
-                            x=track.Xs,
-                            y=track.Ys,
-                            fill=True,
-                            cmap="RdYlGn_r",
-                            ax=ax4
-                        )
-
-                        ax4.set_aspect("equal")
-
-                        heat_plot.pyplot(fig4)
-
-                        plt.close(fig4)
-
-            frame_id += 1
-
-            progress.progress(frame_id/total_frames)
-
-        cap.release()
-
-        st.success("Analysis complete")
-
-
-        # -------------------------------------------------
-        # Directional analysis
-        # -------------------------------------------------
-
-        st.subheader("Directional analysis")
-
-        col4,col5 = st.columns(2)
-
-        bins = np.linspace(-180,180,24)
-
-        # Absolute bearing
-
-        with col4:
-
-            fig5 = plt.figure(figsize=(4,4))
-
-            hist,_ = np.histogram(track["bearing_deg"].dropna(), bins=bins)
-
-            theta = np.deg2rad((bins[:-1]+bins[1:])/2)
-
-            ax5 = fig5.add_subplot(111, polar=True)
-
-            ax5.bar(theta,hist,width=np.deg2rad(15),
-                    color="steelblue")
-
-            ax5.set_title("Absolute bearing")
-
-            st.pyplot(fig5)
-
-
-        # Turn direction
-
-        with col5:
-
-            fig6 = plt.figure(figsize=(4,4))
-
-            hist,_ = np.histogram(track["turn_angle"].dropna(), bins=bins)
-
-            theta = np.deg2rad((bins[:-1]+bins[1:])/2)
-
-            ax6 = fig6.add_subplot(111, polar=True)
-
-            ax6.bar(theta,hist,width=np.deg2rad(15),
-                    color="tomato")
-
-            ax6.set_title("Turn direction")
-
-            st.pyplot(fig6)
-
-
-        # -------------------------------------------------
-        # Download CSV
-        # -------------------------------------------------
-
-        csv = track.to_csv(index=False)
-
-        st.download_button(
-            "Download tracking data",
-            csv,
-            "tracking.csv"
+# HEADER
+col1, col2 = st.columns([8,2])
+with col1:
+    st.title("iRATco Image Segmentation Analysis")
+    st.markdown("<span style='font-size:16px;color:gray;'>version 1.1.0</span>", unsafe_allow_html=True)
+with col2:
+    st.image("logo_iratco.png", width=250)
+# =====================================================
+# FUNCTIONS
+# =====================================================
+
+def pil_to_rgb(img):
+    return np.array(img.convert("RGB"))
+
+def compute_gray(rgb):
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+
+def color_distance(img, target):
+    diff = img.astype(float) - target.astype(float)
+    return np.sqrt(np.sum(diff**2, axis=2))
+
+def create_mask(rgb, target_rgb, tolerance):
+    return color_distance(rgb, target_rgb) < tolerance
+
+def apply_segmentation(rgb, active_indices, tolerance):
+    h, w, _ = rgb.shape
+    label_map = -1 * np.ones((h,w), dtype=int)
+
+    for idx in active_indices:
+        target = st.session_state.channel_targets[idx]
+        mask = create_mask(rgb, target, tolerance)
+        label_map[mask] = idx
+
+    return label_map
+
+def isolate_object(rgb, mask):
+    out = np.ones_like(rgb) * 255
+    out[mask] = rgb[mask]
+    return out
+
+# =====================================================
+# DEFAULT COLORS
+# =====================================================
+
+default_colors = {
+    "Red":[255,0,0],
+    "Blue":[0,0,255],
+    "Green":[0,255,0],
+    "Brown":[165,42,42],
+    "Yellow":[255,255,0],
+    "White":[255,255,255]
+}
+
+# =====================================================
+# SESSION STATE
+# =====================================================
+
+if "channels" not in st.session_state:
+    st.session_state.channels = [
+        {"id":"Channel 1","color":"Red"},
+        {"id":"Channel 2","color":"Blue"},
+        {"id":"Channel 3","color":"Green"},
+        {"id":"Channel 4","color":"Brown"}
+    ]
+
+if "channel_targets" not in st.session_state:
+    st.session_state.channel_targets = [None]*4
+
+if "active_channel" not in st.session_state:
+    st.session_state.active_channel = 0
+
+if "spatial_results" not in st.session_state:
+    st.session_state.spatial_results = {}
+
+if "df_results" not in st.session_state:
+    st.session_state.df_results = pd.DataFrame()
+
+# =====================================================
+# SIDEBAR
+# =====================================================
+
+with st.sidebar:
+
+    st.header("Channels")
+
+    for i in range(4):
+
+        st.session_state.channels[i]["id"] = st.text_input(
+            f"Channel {i+1} ID",
+            st.session_state.channels[i]["id"],
+            key=f"id_{i}"
         )
 
-        
+        st.session_state.channels[i]["color"] = st.selectbox(
+            f"Color {i+1}",
+            list(default_colors.keys()),
+            index=list(default_colors.keys()).index(st.session_state.channels[i]["color"]),
+            key=f"color_{i}"
+        )
+
+    selected = st.selectbox(
+        "Active channel",
+        [c["id"] for c in st.session_state.channels]
+    )
+
+    # =====================================================
+    # ✅ FIX TARGET BEHAVIOR DI SINI (SATU-SATUNYA PERUBAHAN)
+    # =====================================================
+    if st.button("Set active"):
+        new_idx = [
+            c["id"] for c in st.session_state.channels
+        ].index(selected)
+
+        st.session_state.active_channel = new_idx
+
+        # 🔥 reset target channel yang baru dipilih
+        st.session_state.channel_targets[new_idx] = None
+
+    # info aktif
+    current_active = st.session_state.channels[st.session_state.active_channel]["id"]
+    current_color = st.session_state.channels[st.session_state.active_channel]["color"]
+    st.markdown(f"**Active: {current_active} ({current_color})**")
+
+    tolerance = st.slider("Tolerance",5,120,40)
+    alpha = st.slider("Overlay",0.1,1.0,0.5)
+
+    # reset tetap ada
+    if st.button("Reset targets"):
+        st.session_state.channel_targets = [None]*4
+        st.session_state.spatial_results = {}
+        st.session_state.df_results = pd.DataFrame()
+
+# =====================================================
+# STEP 1
+# =====================================================
+
+st.header("Step 1: Define segmentation")
+
+ref = st.file_uploader("Reference image")
+
+if ref:
+
+    img = Image.open(ref)
+    rgb = pil_to_rgb(img)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        coords = streamlit_image_coordinates(img, key="ref")
+
+    if coords:
+        x, y = int(coords["x"]), int(coords["y"])
+
+        patch = rgb[max(0,y-2):y+3, max(0,x-2):x+3]
+        target = np.median(patch.reshape(-1,3), axis=0)
+
+        st.session_state.channel_targets[st.session_state.active_channel] = target
+
+    overlay = rgb.copy().astype(float)
+
+    active_indices = [i for i,t in enumerate(st.session_state.channel_targets) if t is not None]
+
+    for idx in active_indices:
+        mask = create_mask(rgb, st.session_state.channel_targets[idx], tolerance)
+        color = np.array(default_colors[st.session_state.channels[idx]["color"]])
+        overlay[mask] = overlay[mask]*(1-alpha) + color*alpha
+
+    with col2:
+        st.image(overlay.astype(np.uint8), width="stretch")
+
+# =====================================================
+# STEP 2
+# =====================================================
+
+files = st.file_uploader("Upload images", accept_multiple_files=True)
+
+# =====================================================
+# RUN ANALYSIS
+# =====================================================
+
+if files and st.button("Run batch analysis"):
+
+    active_indices = [i for i,t in enumerate(st.session_state.channel_targets) if t is not None]
+
+    results = []
+    spatial = {}
+
+    for f in files:
+
+        img = Image.open(f)
+        rgb = pil_to_rgb(img)
+        gray = compute_gray(rgb)
+
+        label_map = apply_segmentation(rgb, active_indices, tolerance)
+
+        spatial[f.name] = []
+
+        total = np.sum(label_map >= 0)
+
+        for idx in active_indices:
+
+            ch = st.session_state.channels[idx]
+
+            mask = label_map == idx
+            area = np.sum(mask)
+
+            percent = (area/total)*100 if total>0 else 0
+            mean_intensity = float(np.mean(gray[mask])) if area>0 else 0
+
+            results.append({
+                "image": f.name,
+                "label": ch["id"],
+                "percent_area": percent,
+                "mean_intensity": mean_intensity
+            })
+
+            spatial[f.name].append({
+                "label": ch["id"],
+                "image": isolate_object(rgb, mask),
+                "percent": percent,
+                "mean_intensity": mean_intensity
+            })
+
+    st.session_state.df_results = pd.DataFrame(results)
+    st.session_state.spatial_results = spatial
+
+# =====================================================
+# VIEWER
+# =====================================================
+
+if st.session_state.spatial_results:
+
+    st.subheader("Spatial Viewer")
+
+    names = list(st.session_state.spatial_results.keys())
+    idx = st.slider("Sample", 0, len(names)-1, 0)
+
+    selected = names[idx]
+    chs = st.session_state.spatial_results[selected]
+
+    cols = st.columns(len(chs))
+
+    for i, ch in enumerate(chs):
+        with cols[i]:
+            st.markdown(f"**{ch['label']}**")
+            st.image(ch["image"], width="stretch")
+            st.caption(f"{ch['percent']:.2f}% | {ch['mean_intensity']:.2f}")
+
+# =====================================================
+# TABLE
+# =====================================================
+
+if not st.session_state.df_results.empty:
+
+    st.subheader("Results per Channel")
+
+    df = st.session_state.df_results
+
+    for label in df["label"].unique():
+        st.markdown(f"### {label}")
+        st.dataframe(df[df["label"] == label])
+
+    st.download_button("Download CSV", df.to_csv(index=False), "results.csv")
