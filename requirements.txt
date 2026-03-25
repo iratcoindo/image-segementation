@@ -1,6 +1,6 @@
 streamlit
-opencv-python-headless
+streamlit-image-coordinates
 numpy
 pandas
-matplotlib
-seaborn
+Pillow
+opencv-python-headless
