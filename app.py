@@ -13,9 +13,8 @@ import streamlit as st
 # DATA USER (hardcoded)
 # =========================
 USERS = {
-    "admin": "12345",
-    "lab": "iratco",
-    "msbangkit@gmail.com": "test"
+    "admin": "iratcolab1",
+    "lab": "iratcolab5"
 }
 
 # =========================
@@ -41,9 +40,9 @@ if not st.session_state.authenticated:
         if username in USERS and USERS[username] == password:
             st.session_state.authenticated = True
             st.session_state.username = username
-            st.success(f"Selamat datang, {username} 👋")
+            st.success(f"Welcome, {username} 👋")
         else:
-            st.error("Username atau password salah")
+            st.error("Invalide username or password")
 
     st.stop()
 
