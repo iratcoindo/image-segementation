@@ -57,7 +57,7 @@ st.set_page_config(
 )
 
 # HEADER
-col1, col2 = st.columns([8,2])
+col1, col2 = st.columns([6,2])
 with col1:
     st.title("iRATco Image Segmentation Analysis")
     st.markdown("<span style='font-size:16px;color:gray;'>version 1.1.0</span>", unsafe_allow_html=True)
